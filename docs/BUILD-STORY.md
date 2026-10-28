@@ -3,7 +3,7 @@
 Sources: the private development repository's git history (13 commits,
 2026-07-25 to 2026-10-23, including one unmerged feature branch), its issues
 and pull requests, `docs/decisions.md`, the contract, and the tests. This
-public repository is a one-commit snapshot of the `main` branch.
+public repository started as a one-commit snapshot of the `main` branch.
 
 ## The problem
 

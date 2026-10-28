@@ -61,9 +61,9 @@ script sets the host name to `app-01` so no machine name is published):
 - Background-thread file writes; the package README records about 50 µs
   per record measured on an M4 Pro
 - CI and a pre-push hook that run the same checks: fixture validity,
-  contract/fixture version match, ruff, strict mypy, pytest (run as an
-  unprivileged user so permission tests are real), and PR test selection
-  by changed path
+  contract/fixture version match, ruff, strict mypy and pytest. CI also
+  runs pytest as an unprivileged user so permission tests are real, and
+  selects PR tests by changed path
 
 ## Stack
 
