@@ -1,0 +1,53 @@
+# Secrets and local config -- never committed
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+id_rsa*
+id_ed25519*
+
+# Logs (this repo defines the log format; it does not store logs)
+*.log
+*.jsonl
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Node / Bun
+node_modules/
+bun.lockb
+*.tsbuildinfo
+.turbo/
+
+# Ruby
+.bundle/
+vendor/bundle/
+*.gem
+
+# Rust
+target/
+Cargo.lock
+
+# Swift
+.build/
+.swiftpm/
+*.xcuserstate
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini

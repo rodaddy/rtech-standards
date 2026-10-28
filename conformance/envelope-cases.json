@@ -1,0 +1,162 @@
+{
+  "contract_version": "1.0.0",
+  "description": "Language-agnostic conformance cases for OBSERVABILITY_CONTRACT.md. Every rtech-obs implementation MUST pass all of them. Fields listed in match.pattern are matched by regex; fields in match.exact are compared for equality; fields in match.absent MUST NOT be present.",
+  "patterns": {
+    "timestamp": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+    "host": "^[A-Za-z0-9._-]+$"
+  },
+  "cases": [
+    {
+      "name": "minimal-info-record",
+      "why": "The five required fields are always stamped, even for a bare message.",
+      "config": { "SERVICE_NAME": "widget", "LOG_LEVEL": "info" },
+      "call": { "level": "info", "message": "started" },
+      "match": {
+        "exact": { "level": "info", "service": "widget", "message": "started" },
+        "pattern": { "timestamp": "timestamp", "host": "host" },
+        "absent": ["correlation_id", "error", "duration_ms"]
+      }
+    },
+    {
+      "name": "single-line-json",
+      "why": "A multi-line record breaks line-oriented collection.",
+      "config": { "SERVICE_NAME": "widget" },
+      "call": { "level": "info", "message": "line one" },
+      "assert_raw": { "no_newline_before_end": true, "parses_as_single_json_object": true }
+    },
+    {
+      "name": "level-below-threshold-is-dropped",
+      "why": "LOG_LEVEL is a floor, not a hint.",
+      "config": { "SERVICE_NAME": "widget", "LOG_LEVEL": "warning" },
+      "call": { "level": "info", "message": "not emitted" },
+      "match": { "emits": false }
+    },
+    {
+      "name": "level-at-threshold-is-emitted",
+      "config": { "SERVICE_NAME": "widget", "LOG_LEVEL": "warning" },
+      "call": { "level": "warning", "message": "emitted" },
+      "match": { "emits": true, "exact": { "level": "warning" } }
+    },
+    {
+      "name": "caller-cannot-override-service",
+      "why": "Contract 1.3 -- required fields are stamped by the implementation. A caller-supplied service name fractures every Loki query.",
+      "config": { "SERVICE_NAME": "widget" },
+      "call": { "level": "info", "message": "x", "context": { "service": "impostor" } },
+      "match": {
+        "exact": { "service": "widget" },
+        "context_exact": { "service": "impostor" }
+      }
+    },
+    {
+      "name": "unknown-top-level-field-moves-into-context",
+      "why": "Contract 1.3 -- a flat extensible namespace is how field names fracture.",
+      "config": { "SERVICE_NAME": "widget" },
+      "call": { "level": "info", "message": "x", "extra": { "user_id": 42 } },
+      "match": { "context_exact": { "user_id": 42 }, "absent": ["user_id"] }
+    },
+    {
+      "name": "redacts-secret-valued-keys",
+      "why": "Contract 4 -- key retained, value replaced, so the audit trail survives without the payload.",
+      "config": { "SERVICE_NAME": "widget" },
+      "call": {
+        "level": "info",
+        "message": "auth attempt",
+        "context": {
+          "username": "rico",
+          "password": "hunter2",
+          "api_key": "sk-live-abc",
+          "Authorization": "Bearer xyz",
+          "TOKEN": "t0k3n"
+        }
+      },
+      "match": {
+        "context_exact": {
+          "username": "rico",
+          "password": "[REDACTED]",
+          "api_key": "[REDACTED]",
+          "Authorization": "[REDACTED]",
+          "TOKEN": "[REDACTED]"
+        }
+      }
+    },
+    {
+      "name": "redaction-recurses-into-nested-objects-and-arrays",
+      "why": "Contract 4 -- a nested secret is still a secret.",
+      "config": { "SERVICE_NAME": "widget" },
+      "call": {
+        "level": "info",
+        "message": "nested",
+        "context": {
+          "outer": { "inner": { "secret": "s3cr3t", "kept": "visible" } },
+          "list": [{ "cookie": "abc" }, { "safe": "ok" }]
+        }
+      },
+      "match": {
+        "context_json": {
+          "outer": { "inner": { "secret": "[REDACTED]", "kept": "visible" } },
+          "list": [{ "cookie": "[REDACTED]" }, { "safe": "ok" }]
+        }
+      }
+    },
+    {
+      "name": "error-record-populates-error-object",
+      "config": { "SERVICE_NAME": "widget" },
+      "call": { "level": "error", "message": "failed", "error": { "type": "ValueError", "message": "bad input" } },
+      "match": {
+        "exact": { "level": "error" },
+        "error_exact": { "type": "ValueError", "message": "bad input" }
+      }
+    },
+    {
+      "name": "correlation-id-stays-in-body",
+      "why": "Contract 2 -- promoting it to a label creates unbounded Loki streams.",
+      "config": { "SERVICE_NAME": "widget" },
+      "call": { "level": "info", "message": "x", "correlation_id": "7f3c9a12" },
+      "match": { "exact": { "correlation_id": "7f3c9a12" }, "labels_exact": ["service", "host"] }
+    },
+    {
+      "name": "duration-is-numeric-not-string",
+      "config": { "SERVICE_NAME": "widget" },
+      "call": { "level": "info", "message": "done", "duration_ms": 1234 },
+      "match": { "exact": { "duration_ms": 1234 }, "types": { "duration_ms": "number" } }
+    },
+    {
+      "name": "missing-service-name-fails-closed",
+      "why": "Contract 5.1 -- an unlabelled record is unattributable.",
+      "config": {},
+      "match": { "raises_at_init": true }
+    },
+    {
+      "name": "invalid-log-level-fails-closed",
+      "why": "Contract 5.1 -- silently defaulting to info discards operator intent.",
+      "config": { "SERVICE_NAME": "widget", "LOG_LEVEL": "chatty" },
+      "match": { "raises_at_init": true }
+    },
+    {
+      "name": "abbreviated-level-is-non-conforming",
+      "why": "Contract 1.3 -- Loki matches level literally.",
+      "config": { "SERVICE_NAME": "widget", "LOG_LEVEL": "warn" },
+      "match": { "raises_at_init": true }
+    },
+    {
+      "name": "unwritable-log-file-degrades-to-stdout-with-warning",
+      "why": "Contract 5.1 -- a missing log mount must not stop a service booting, but the degradation must be loud (Contract 3).",
+      "config": { "SERVICE_NAME": "widget", "LOG_FILE": "/nonexistent-root-path/widget/today.jsonl" },
+      "match": {
+        "raises_at_init": false,
+        "emits_warning_at_init": true,
+        "warning_message_contains": "/nonexistent-root-path/widget/today.jsonl"
+      }
+    },
+    {
+      "name": "default-log-file-follows-share-convention",
+      "why": "Contract 6 -- Alloy discovers logs by path, so a per-service default is what makes collection zero-config.",
+      "config": { "SERVICE_NAME": "widget" },
+      "match": {
+        "resolved_config_pattern": {
+          "LOG_FILE": "^/mnt/logs/services/widget/\\d{4}-\\d{2}-\\d{2}\\.jsonl$"
+        }
+      }
+    }
+  ]
+}

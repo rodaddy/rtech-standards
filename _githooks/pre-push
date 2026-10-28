@@ -1,0 +1,70 @@
+#!/usr/bin/env zsh
+# Pre-push gate. Command-identical to .github/workflows/ci.yml so a green local
+# push means a green CI run -- a hook that checks something different is worse
+# than no hook, because it teaches you to trust the wrong signal.
+#
+# Installed via scripts/install-hooks.sh (core.hooksPath=_githooks).
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "${repo_root}"
+
+fail() {
+  print -u2 "pre-push: $1"
+  exit 1
+}
+
+print "pre-push: never-on-main check"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+if [[ "${branch}" == "main" ]]; then
+  # The bootstrap commit is the only legitimate direct-main push; after that,
+  # main only advances through a merged PR.
+  if [[ "${ALLOW_MAIN_PUSH:-0}" != "1" ]]; then
+    fail "refusing to push main directly (set ALLOW_MAIN_PUSH=1 for the bootstrap commit only)"
+  fi
+  print "pre-push: ALLOW_MAIN_PUSH=1 -- permitting bootstrap push"
+fi
+
+print "pre-push: conformance fixture is valid JSON"
+python3 -c "import json; json.load(open('conformance/envelope-cases.json'))" \
+  || fail "conformance/envelope-cases.json is not valid JSON"
+
+print "pre-push: contract version matches fixture"
+contract="$(grep -m1 '^\*\*Version:' OBSERVABILITY_CONTRACT.md | tr -dc '0-9.')"
+fixture="$(python3 -c "import json;print(json.load(open('conformance/envelope-cases.json'))['contract_version'])")"
+[[ "${contract}" == "${fixture}" ]] \
+  || fail "contract ${contract} != fixture ${fixture}"
+
+print "pre-push: no CLAUDE.md (it suppresses Claude Code's native AGENTS.md load)"
+test ! -e CLAUDE.md \
+  || fail "remove CLAUDE.md; repo instructions live in AGENTS.md"
+
+# Stack-gated: each block runs only when that stack is actually present, so the
+# dormant ones cost nothing and no speculative config is required.
+if [[ -f packages/python/pyproject.toml ]]; then
+  print "pre-push: python (format, lint, types, conformance)"
+  ( cd packages/python
+    uv run ruff format --check .   || fail "ruff format"
+    uv run ruff check .            || fail "ruff check"
+    uv run mypy src                || fail "mypy strict"
+    uv run pytest -q               || fail "conformance fixture"
+  )
+fi
+
+if [[ -f packages/typescript/package.json ]]; then
+  print "pre-push: typescript"
+  ( cd packages/typescript
+    bun run typecheck || fail "tsc"
+    bun test          || fail "bun test"
+  )
+fi
+
+if [[ -f packages/ruby/Gemfile ]]; then
+  print "pre-push: ruby"
+  ( cd packages/ruby
+    bundle exec rubocop || fail "rubocop"
+    bundle exec rspec   || fail "rspec"
+  )
+fi
+
+print "pre-push: OK"

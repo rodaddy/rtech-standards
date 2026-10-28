@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Contract and fixture integrity
+    runs-on: ubuntu-latest
+    container: node:20-bookworm
+    steps:
+      # Third-party actions are pinned by commit SHA, not tag: a tag can be moved
+      # to point at new code, a SHA cannot.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Conformance fixture is valid JSON
+        run: python3 -c "import json,sys; json.load(open('conformance/envelope-cases.json'))"
+
+      - name: Contract version matches the fixture
+        run: |
+          contract="$(grep -m1 '^\*\*Version:' OBSERVABILITY_CONTRACT.md | tr -dc '0-9.')"
+          fixture="$(python3 -c "import json;print(json.load(open('conformance/envelope-cases.json'))['contract_version'])")"
+          echo "contract=${contract} fixture=${fixture}"
+          test "${contract}" = "${fixture}"
+
+      - name: No CLAUDE.md (it suppresses Claude Code's native AGENTS.md load)
+        run: test ! -e CLAUDE.md
+
+      - name: No hidden folders holding project content
+        run: |
+          offenders="$(find . -mindepth 1 -maxdepth 2 -type d -name '.*' \
+            -not -path './.git*' -not -path './.github*' -print)"
+          if [ -n "${offenders}" ]; then
+            echo "hidden project folders are not allowed:"
+            echo "${offenders}"
+            exit 1
+          fi
+
+  python:
+    name: Python rtech-obs
+    runs-on: ubuntu-latest
+    container: node:20-bookworm
+    # uv and its Python live outside /root so the unprivileged test user can
+    # run them (see "Conformance fixture").
+    env:
+      UV_PYTHON_INSTALL_DIR: /opt/uv/python
+    defaults:
+      run:
+        working-directory: packages/python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history so the PR test selector can diff base...head.
+          fetch-depth: 0
+
+      # The job container is node:20-bookworm (python3.11, no uv): install uv and
+      # the Python the package requires (>=3.13) directly.
+      - name: Install uv and Python 3.13
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh
+          uv python install 3.13
+
+      - name: Sync
+        run: uv sync --all-extras --dev
+
+      - name: Format
+        run: uv run ruff format --check .
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Types (strict)
+        run: uv run mypy src
+
+      # The job container runs as root, and root defeats the permission tests
+      # (an unwritable log file is writable to root). Tests run as `ci`.
+      - name: Create unprivileged test user
+        run: |
+          useradd -m -s /bin/bash ci
+          chown -R ci:ci "$GITHUB_WORKSPACE"
+          # The test selector runs git as root over the now ci-owned checkout.
+          git config --system --add safe.directory "$GITHUB_WORKSPACE"
+
+      # Push to main runs the full suite. A PR runs only the tests its change
+      # touches; scripts/ci/select-tests.sh falls back to the full suite on any
+      # shared input and runs none on a docs-only change.
+      - name: Conformance fixture
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          as_ci="runuser -u ci -- env HOME=/home/ci PATH=${PATH} UV_PYTHON_INSTALL_DIR=${UV_PYTHON_INSTALL_DIR}"
+          if [ "${EVENT}" != "pull_request" ]; then
+            ${as_ci} uv run pytest -q
+            exit 0
+          fi
+          selection="$(bash ../../scripts/ci/select-tests.sh "${BASE_SHA}" "${HEAD_SHA}")"
+          echo "selected: ${selection}"
+          case "${selection}" in
+            FULL) ${as_ci} uv run pytest -q ;;
+            NONE) echo "docs-only change: no tests to run" ;;
+            *) echo "${selection}" | xargs ${as_ci} uv run pytest -q ;;
+          esac
