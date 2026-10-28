@@ -19,7 +19,9 @@ init_observability()  # once, at startup
 logger.info("service started")
 ```
 
-Four exports, deliberately:
+Four primary exports, deliberately. The package also re-exports its config
+and envelope helpers (`ConfigError`, `LogLevel`, `load_config`, `redact` and
+others; see `__all__`).
 
 | Export | Purpose |
 |--------|---------|
