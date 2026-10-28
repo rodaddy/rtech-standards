@@ -20,8 +20,8 @@ piece.
 
 Loki builds one index stream per unique label-value combination. Promoting a
 high-cardinality field such as `correlation_id` produces an unbounded number of
-streams and progressively destroys query performance. With ~139 service processes
-in the fleet, this is the single decision that determines whether the install stays
+streams and progressively destroys query performance. With well over a hundred
+service processes to cover, this is the single decision that determines whether the install stays
 usable.
 
 Everything except `service` and `host` therefore lives in the JSON body, queried
@@ -72,7 +72,7 @@ bespoke collector config and the enforcement story collapses.
 
 Loki's own chunk and index store stays on **local disk**, never the NFS share.
 Loki does read-modify-write with file locking, and NFSv4 lock semantics corrupt
-it. The fleet already has receipts for this class of problem: a shared runners
+it. Earlier NFS problems point the same way: a shared runners
 directory became unreadable by every identity including root under `sec=sys`
 squash, NFS default ACLs override `umask`, and `chattr +i` is unsupported on NFS.
 
@@ -88,7 +88,7 @@ Python already has the established `config.py` + loguru pattern and a reference
 service, so it is the implementation other languages are checked
 against.
 
-Nothing in the current fleet is Rust or Swift. Those bindings are specified but
+No current service is written in Rust or Swift. Those bindings are specified but
 deliberately unimplemented until a consumer exists — untested bindings that nobody
 imports are liability, not coverage.
 

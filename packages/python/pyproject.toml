@@ -3,7 +3,7 @@ name = "rtech-obs"
 version = "1.0.0"
 description = "Reference implementation of the rTech observability contract v1.0.0"
 requires-python = ">=3.13"
-license = { text = "All rights reserved" }
+license = { text = "PolyForm-Noncommercial-1.0.0" }
 dependencies = [
     "loguru>=0.7.3",
 ]

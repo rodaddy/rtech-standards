@@ -12,8 +12,8 @@ implementation is a bug.
 
 ## Why this exists
 
-Before 2026-07-25 the fleet had no log ingestion at all: ~139 service processes
-wrote to journald or nowhere, and Ansible wrote no on-disk record of any run.
+Before 2026-07-25 the services this contract covers had no log ingestion at all:
+they wrote to journald or nowhere, and Ansible wrote no on-disk record of any run.
 Post-mortems were archaeology — "what broke at 03:14" was unanswerable because
 the data never existed.
 
@@ -70,7 +70,7 @@ Everything else lives in the JSON body and is queried with a line filter or
 `json` parser. This is not stylistic. Loki builds one index stream per unique
 label-value combination; promoting a high-cardinality field such as
 `correlation_id` produces an unbounded number of streams and makes the install
-progressively unusable. At ~139 services this is the single mistake that would
+progressively unusable. Across many services this is the single mistake that would
 take the system down.
 
 ```logql
@@ -164,7 +164,7 @@ must not fail to boot because a log mount is absent.
 `<service>` MUST be the catalog service name, so the tree matches the service
 manifests and can be validated against them.
 
-`/mnt/logs` is an NFS share mounted fleet-wide. Application logs are written
+`/mnt/logs` is an NFS share mounted on every host. Application logs are written
 there as the durable raw archive; Loki ingests from it. Loki's own chunk and
 index store MUST remain on local disk — it performs read-modify-write with file
 locking, and NFSv4 lock semantics corrupt it.
@@ -189,6 +189,6 @@ This contract is semver'd, and the version above is authoritative.
 - **Major** — any change to required fields, label promotion, or redaction
   behavior.
 
-Consumers MUST pin by version tag, never by branch or commit URL. This repo is
-moving from GitHub to Forgejo; a tag-pinned dependency survives the move as a
-remote swap, while nine URL-pinned dependencies do not.
+Consumers MUST pin by version tag, never by branch or commit URL. A tag-pinned
+dependency survives a move to another git host as a remote swap, while nine
+URL-pinned dependencies do not.
